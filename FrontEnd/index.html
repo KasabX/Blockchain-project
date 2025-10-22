@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Certificate Verification (Demo)</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 24px auto; }
+    h2 { margin-top: 0 }
+    input { margin: 4px 6px 10px 0; padding: 8px; width: 100%; max-width: 360px; }
+    button { padding: 8px 14px; cursor: pointer; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin: 14px 0; }
+    pre { background:#f7f7f7; padding:10px; border-radius:8px; overflow:auto; }
+    .small { color:#777; font-size:13px }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <h2>Certificate Verification (MVP)</h2>
+  <p class="small">We compute a certificate <b>hash</b> from <code>name|idNumber|date</code>, save metadata to a local API, and verify by recomputing the same hash.</p>
+
+  <div class="card">
+    <h3>Issue Certificate (save metadata)</h3>
+    <input id="issueName"  placeholder="Full name" />
+    <input id="issueId"    placeholder="ID number" />
+    <input id="issueDate"  type="date" />
+    <div class="row">
+      <button id="issueBtn">Save</button>
+      <button id="copyHashBtn" style="display:none;">Copy hash</button>
+    </div>
+    <p id="issueMsg"></p>
+    <p class="small">💡 <b>On-chain issue requires 0.001 ETH</b>. In Remix set <b>VALUE = 1 Finney</b> and call <code>issueFromFields(name, id, date)</code>. Verification calls are free.</p>
+  </div>
+
+  <div class="card">
+    <h3>Verify Certificate</h3>
+    <input id="verifyName" placeholder="Full name" />
+    <input id="verifyId"   placeholder="ID number" />
+    <input id="verifyDate" type="date" />
+    <button id="verifyBtn">Verify</button>
+    <p class="small">🔎 Verifies by recomputing the hash and reading metadata from the local API.</p>
+    <pre id="out"></pre>
+  </div>
+
+ 
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const API = "http://localhost:4000";
+    const makeHash = (n,i,d) =>
+      ethers.utils.keccak256(ethers.utils.toUtf8Bytes(`${n}|${i}|${d}`));
+
+    let lastHash = null;
+
+    // ISSUE: save metadata off-chain using our API
+    $("issueBtn").onclick = async () => {
+      const n = $("issueName").value.trim();
+      const i = $("issueId").value.trim();
+      const d = $("issueDate").value;
+      if (!n || !i || !d) { $("issueMsg").textContent = "Fill all fields"; return; }
+      const hash = makeHash(n,i,d);
+      try {
+
+      // the connection with the back and the front is here
+        const res = await fetch(`${API}/certificates`, {
+          method:"POST", headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ hash, name:n, idNumber:i, issueDate:d })
+        });
+
+        if (!res.ok) throw new Error("API error");
+        lastHash = hash;
+        $("issueMsg").textContent = "Saved. Hash = " + hash;
+        $("copyHashBtn").style.display = "inline-block";
+      } catch(e){ $("issueMsg").textContent = e.message; }
+    };
+
+    // Copy last hash to clipboard
+  
+    // VERIFY: recompute hash + try to read metadata
+    $("verifyBtn").onclick = async () => {
+      const n = $("verifyName").value.trim();
+      const i = $("verifyId").value.trim();
+      const d = $("verifyDate").value;
+      if (!n || !i || !d) { $("out").textContent = "Fill all fields"; return; }
+      const hash = makeHash(n,i,d);
+      try {
+        const r = await fetch(`${API}/certificates/${hash}`);
+        const meta = r.ok ? await r.json() : "not found";
+        $("out").textContent = JSON.stringify({ hash, offChain: meta }, null, 2);
+      } catch(e){
+        $("out").textContent = e.message;
+      }
+    };
+  </script>
+</body>
+</html>
